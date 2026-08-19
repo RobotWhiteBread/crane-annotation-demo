@@ -17,13 +17,14 @@ It also does something demo notebooks usually skip, which is to show where the
 method stops working. On a dense roost the simple approach fails, and the
 interesting part is being able to say so precisely.
 
-**Audio.** Two clips recorded by the author on the central Platte River, Nebraska,
-at dawn in March 2026. Same continuous recording, roughly nineteen minutes apart.
+**Audio.** Two clips recorded by the author at a Central Flyway roost during spring
+migration. Both come from one continuous dawn recording, the second later than
+the first.
 
 | clip | what it is |
 |---|---|
 | `crane_roost_sparse_30s.wav` | early, before the roost fully wakes; calls are separable |
-| `crane_roost_chorus_20s.wav` | later, near liftoff; a continuous wall of sound |
+| `crane_roost_chorus_20s.wav` | later, once the roost is fully awake; a continuous wall of sound |
 
 *Companion to the private GRUS research pipeline. Methods here are textbook and
 deliberately simple; nothing in this notebook is part of that pipeline.*""")
@@ -60,7 +61,7 @@ looking at the spectrogram, then trusting whatever comes out.""")
 
 code("""fig, axes = plt.subplots(2, 1, figsize=(13, 6), sharex=True)
 librosa.display.waveshow(y, sr=SR, ax=axes[0], color="#1F5C68")
-axes[0].set_title("Waveform: crane roost, dawn, sparse passage")
+axes[0].set_title("Waveform: crane roost, sparse passage")
 img = librosa.display.specshow(spec(y), sr=SR, hop_length=HOP, x_axis="time",
                                y_axis="hz", ax=axes[1], cmap="magma")
 axes[1].set_ylim(0, 4000)
@@ -285,7 +286,7 @@ sel.head(10)""")
 
 md("""## 6. Where this stops working
 
-The clip above is the *easy* case. Nineteen minutes later the same roost sounds like
+The clip above is the *easy* case. Later in the same recording the roost sounds like
 this.""")
 
 code("""yc = load(CHORUS)
@@ -305,7 +306,7 @@ for name, sig, bl in (("sparse", y, bouts), ("chorus", yc, chorus_bouts)):
 
 code("""fig, axes = plt.subplots(2, 1, figsize=(13, 6))
 for ax, sig, title in ((axes[0], y,  "sparse passage: structure is visible"),
-                       (axes[1], yc, "chorus, ~19 min later: continuous")):
+                       (axes[1], yc, "chorus, later in the same recording: continuous")):
     librosa.display.specshow(spec(sig), sr=SR, hop_length=HOP, x_axis="time",
                              y_axis="hz", ax=ax, cmap="magma")
     ax.set_ylim(0, 4000); ax.set_title(title)
@@ -338,8 +339,8 @@ chosen and are documented as chosen.
 Production annotation work, meaning multi-observer protocols, call-type taxonomies, and
 sequence analysis, lives in the private GRUS pipeline pending publication.
 
-**Audio** recorded by the author, central Platte River, Nebraska, March 2026. Released
-with this repository under CC BY 4.0. **Code** MIT.""")
+**Audio** recorded by the author at a Central Flyway roost, spring 2026. Released with
+this repository under CC BY 4.0. **Code** MIT.""")
 
 nb["cells"] = cells
 nb["metadata"]["kernelspec"] = {"display_name": "Python 3", "language": "python", "name": "python3"}

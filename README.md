@@ -4,18 +4,18 @@
 
 This notebook walks the basic path every annotation project shares: load a recording, view it as a spectrogram, detect call boundaries, and export a selection table an expert can open and correct by hand.
 
-It also does the thing demo notebooks usually skip, which is to show where the method stops working. The same roost, nineteen minutes later, defeats it completely. Being able to say precisely when a detector has stopped being informative is worth more than the detector.
+It also does the thing demo notebooks usually skip, which is to show where the method stops working. The same roost, later in the same recording, defeats it completely. Being able to say precisely when a detector has stopped being informative is worth more than the detector.
 
 Companion to the private GRUS research pipeline. Everything here is textbook methodology; none of it is part of that pipeline.
 
 ## The audio
 
-Two clips recorded by the author on the central Platte River, Nebraska, at dawn in March 2026. Both come from one continuous recording, about nineteen minutes apart.
+Two clips recorded by the author at a Central Flyway roost during spring migration. Both come from one continuous dawn recording, the second later than the first.
 
 | clip | separability | what it is |
 |---|---|---|
 | `crane_roost_sparse_30s.wav` | 2.69 | early, before the roost fully wakes; calls are separable |
-| `crane_roost_chorus_20s.wav` | 1.35 | later, near liftoff; a continuous wall of sound |
+| `crane_roost_chorus_20s.wav` | 1.35 | later, once the roost is fully awake; a continuous wall of sound |
 
 Separability is peak band energy over median band energy. A ratio near 1 means the loudest moment is barely louder than a typical one.
 
@@ -50,7 +50,7 @@ No learned models, no call-type classification, no individual identification, no
 
 ## Licensing
 
-**Audio** © 2026 Aaron Price, released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Reuse it, credit the recordist.
+**Audio** © 2026 Aaron Price, recorded at a Central Flyway roost, spring 2026. Released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Reuse it, credit the recordist.
 
 **Code** MIT.
 
