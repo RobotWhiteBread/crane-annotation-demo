@@ -1,4 +1,4 @@
-# crane-annotation-demo
+﻿# crane-annotation-demo
 
 **A small, self-contained demo of a bioacoustic annotation workflow, run on an openly licensed Sandhill Crane recording.**
 
@@ -34,6 +34,8 @@ jupyter notebook crane_annotation_demo.ipynb
 
 Any xeno-canto audio remains under its recordist's Creative Commons license; the notebook prints the recording ID, recordist, and license when it fetches. Code in this repo is MIT.
 
+**On Raven:** this repo writes a tab-separated selection table in the layout Raven reads. It bundles, links, and requires no Raven software, and it is not affiliated with or endorsed by the Cornell Lab of Ornithology. Raven is named only to describe the output format. [Raven Pro and Raven Lite](https://www.ravensoundsoftware.com/) are products of the Cornell Lab's K. Lisa Yang Center for Conservation Bioacoustics and carry their own licenses.
+
 ---
 
-Aaron Price · Anima Audire, LLC · [Profile](https://github.com/RobotWhiteBread) · aaron.price.unl@gmail.com
+Aaron Price Â· Anima Audire, LLC Â· [Profile](https://github.com/RobotWhiteBread) Â· aaron.price.unl@gmail.com
