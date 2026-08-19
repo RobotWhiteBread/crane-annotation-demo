@@ -1,41 +1,61 @@
-﻿# crane-annotation-demo
+# crane-annotation-demo
 
-**A small, self-contained demo of a bioacoustic annotation workflow, run on an openly licensed Sandhill Crane recording.**
+**A bioacoustic annotation workflow on real field audio, including where it breaks.**
 
-This notebook walks the basic path every bioacoustics annotation project shares: load a field recording, look at it as a spectrogram, detect call onsets and offsets, and export the events as a selection table that opens directly in [Raven / Raven Lite](https://www.ravensoundsoftware.com/).
+This notebook walks the basic path every annotation project shares: load a recording, view it as a spectrogram, detect call boundaries, and export a selection table an expert can open and correct by hand.
 
-It exists as a public companion to [GRUS](https://github.com/RobotWhiteBread/GRUS), my Sandhill Crane bioacoustics pipeline. Everything here is textbook methodology on openly licensed audio; the GRUS research pipeline and its findings are private pending peer review.
+It also does the thing demo notebooks usually skip, which is to show where the method stops working. The same roost, nineteen minutes later, defeats it completely. Being able to say precisely when a detector has stopped being informative is worth more than the detector.
+
+Companion to the private GRUS research pipeline. Everything here is textbook methodology; none of it is part of that pipeline.
+
+## The audio
+
+Two clips recorded by the author on the central Platte River, Nebraska, at dawn in March 2026. Both come from one continuous recording, about nineteen minutes apart.
+
+| clip | separability | what it is |
+|---|---|---|
+| `crane_roost_sparse_30s.wav` | 2.69 | early, before the roost fully wakes; calls are separable |
+| `crane_roost_chorus_20s.wav` | 1.35 | later, near liftoff; a continuous wall of sound |
+
+Separability is peak band energy over median band energy. A ratio near 1 means the loudest moment is barely louder than a typical one.
 
 ## What the notebook does
 
-1. Loads audio from one of three sources (see below)
-2. Renders waveform and spectrogram views
-3. Detects call onsets with an energy-envelope method and estimates offsets by envelope decay, bounding each event by the next onset so neighbouring calls stay separate
-4. Assigns a frequency band to each event from its band-limited energy
-5. Exports a tab-separated **Raven selection table** and overlays the selections on the spectrogram
+1. Looks at the spectrogram before running anything
+2. Shows that stock `librosa` onset settings fire **7.4 times per second** on this material, tracking chorus ripple rather than birds
+3. Sweeps `delta` and `wait`, finding that usable behaviour occupies a narrow band with no stable plateau, and documents the chosen values as chosen rather than derived
+4. Detects 15 **calling bouts** in 30 seconds, and is explicit that these are not individual calls
+5. Cross-checks with an independent spectral-flux detector, since there are no hand labels and agreement between methods that fail differently is the available evidence
+6. Exports a Raven-compatible selection table with a `Corroborated` column
+7. Runs the same pipeline on the chorus clip, where it finds **zero** events
 
-## Audio sources
+## The result worth reading
 
-The notebook tries three sources in order:
+On the dense clip the detector returns nothing at all. Downstream, zero detections reports as *no calling activity* at the exact moment thousands of birds are calling at once. Nothing raises, nothing logs a warning, and the output is structurally indistinguishable from a genuinely quiet recording.
 
-1. **Your own file.** Set `AUDIO_PATH` in the config cell to any local recording. This is the normal way to use it.
-2. **xeno-canto.** As of 10 October 2025 the xeno-canto API (v3) requires a free API key. Register at [xeno-canto.org](https://xeno-canto.org), then set `XC_API_KEY` in your environment before launching Jupyter. No audio is redistributed in this repo; recordings are fetched at runtime and stay under the recordist's Creative Commons license.
-3. **Synthesized fallback.** With neither of the above, the notebook generates a crane-like test signal so every cell still runs end to end. The committed outputs were produced this way, which is why the spectrogram looks synthetic.
+That is the argument for computing a separability statistic and reporting it next to the detections, so an empty result can be told apart from an uninformative one.
 
 ## Run it
 
 ```bash
 pip install -r requirements.txt
-export XC_API_KEY=your_key_here      # optional
 jupyter notebook crane_annotation_demo.ipynb
 ```
 
-## Credit and licensing
+The audio ships with the repo, so it runs with no setup and no API keys. `make_notebook.py` regenerates the notebook if you would rather not hand-edit JSON.
 
-Any xeno-canto audio remains under its recordist's Creative Commons license; the notebook prints the recording ID, recordist, and license when it fetches. Code in this repo is MIT.
+## What this is not
 
-**On Raven:** this repo writes a tab-separated selection table in the layout Raven reads. It bundles, links, and requires no Raven software, and it is not affiliated with or endorsed by the Cornell Lab of Ornithology. Raven is named only to describe the output format. [Raven Pro and Raven Lite](https://www.ravensoundsoftware.com/) are products of the Cornell Lab's K. Lisa Yang Center for Conservation Bioacoustics and carry their own licenses.
+No learned models, no call-type classification, no individual identification, no source separation. Production annotation work, meaning multi-observer protocols, call-type taxonomies, and sequence analysis, lives in the private GRUS pipeline pending publication.
+
+## Licensing
+
+**Audio** © 2026 Aaron Price, released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Reuse it, credit the recordist.
+
+**Code** MIT.
+
+Raven is named only to describe the output format. This repository bundles, links, and requires no Raven software and is not affiliated with or endorsed by the Cornell Lab of Ornithology. [Raven Pro and Raven Lite](https://www.ravensoundsoftware.com/) carry their own licenses.
 
 ---
 
-Aaron Price Â· Anima Audire, LLC Â· [Profile](https://github.com/RobotWhiteBread) Â· aaron.price.unl@gmail.com
+Aaron Price · Anima Audire, LLC · [Profile](https://github.com/RobotWhiteBread) · aaron.price.unl@gmail.com

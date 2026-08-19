@@ -3,5 +3,4 @@ soundfile
 numpy
 pandas
 matplotlib
-requests
 notebook

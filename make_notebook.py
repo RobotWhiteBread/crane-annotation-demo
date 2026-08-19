@@ -4,243 +4,342 @@ import nbformat as nbf
 nb = nbf.v4.new_notebook()
 cells = []
 
-cells.append(nbf.v4.new_markdown_cell("""# Sandhill Crane annotation demo
+md = lambda s: cells.append(nbf.v4.new_markdown_cell(s))
+code = lambda s: cells.append(nbf.v4.new_code_cell(s))
 
-A small, self-contained walk through the basic bioacoustic annotation workflow:
-load a recording, view it as a spectrogram, detect call **onsets and offsets**,
-assign a frequency band to each event, and export a **Raven-compatible selection table**.
+md("""# Annotating a Sandhill Crane roost
 
-*This is textbook methodology on open audio, published as a public companion to
-the private GRUS research pipeline.*
+A walk through the basic bioacoustic annotation workflow on **real field audio**: load a
+recording, view it as a spectrogram, detect call boundaries, and export a
+Raven-compatible selection table.
 
-## Audio sources
+It also does something demo notebooks usually skip, which is to show where the
+method stops working. On a dense roost the simple approach fails, and the
+interesting part is being able to say so precisely.
 
-The notebook tries three sources, in order:
+**Audio.** Two clips recorded by the author on the central Platte River, Nebraska,
+at dawn in March 2026. Same continuous recording, roughly nineteen minutes apart.
 
-1. **Your own file.** Set `AUDIO_PATH` below to any local recording. This is the
-   normal way to use it.
-2. **xeno-canto.** As of October 2025 the xeno-canto API (v3) requires a free API
-   key. Register at [xeno-canto.org](https://xeno-canto.org), then set the
-   environment variable `XC_API_KEY` before launching Jupyter. No audio is
-   redistributed in this repo; recordings are fetched at runtime and remain under
-   the recordist's Creative Commons license.
-3. **Synthesized fallback.** If neither is available, the notebook generates a
-   crane-like test signal so every cell still runs end to end. Useful for CI and
-   for reading the notebook without any setup."""))
+| clip | what it is |
+|---|---|
+| `crane_roost_sparse_30s.wav` | early, before the roost fully wakes; calls are separable |
+| `crane_roost_chorus_20s.wav` | later, near liftoff; a continuous wall of sound |
 
-cells.append(nbf.v4.new_code_cell("""import os, warnings
+*Companion to the private GRUS research pipeline. Methods here are textbook and
+deliberately simple; nothing in this notebook is part of that pipeline.*""")
+
+code("""import warnings
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import librosa, librosa.display
 warnings.filterwarnings("ignore")
 
-SR = 22050          # analysis sample rate
-MAX_SECONDS = 60    # cap so the demo stays quick
-AUDIO_PATH = None   # <- set to a local file path to use your own recording"""))
+SR   = 22050
+HOP  = 256
+NFFT = 1024
 
-cells.append(nbf.v4.new_markdown_cell("## 1. Get a recording"))
+SPARSE = "audio/crane_roost_sparse_30s.wav"
+CHORUS = "audio/crane_roost_chorus_20s.wav"
 
-cells.append(nbf.v4.new_code_cell('''def load_local(path):
-    y, _ = librosa.load(path, sr=SR, mono=True, duration=MAX_SECONDS)
-    print(f"loaded local file: {path}")
-    return y, os.path.splitext(os.path.basename(path))[0]
+def load(path):
+    y, _ = librosa.load(path, sr=SR, mono=True)
+    return y
 
+def spec(y):
+    return librosa.amplitude_to_db(np.abs(librosa.stft(y, n_fft=NFFT, hop_length=HOP)),
+                                   ref=np.max)
 
-def load_xeno_canto():
-    """xeno-canto API v3. Requires a free API key (mandatory since 2025-10-10)."""
-    import requests
-    key = os.environ.get("XC_API_KEY")
-    if not key:
-        raise RuntimeError("XC_API_KEY not set")
-    r = requests.get(
-        "https://xeno-canto.org/api/3/recordings",
-        params={"query": 'sp:"Antigone canadensis" q:A', "key": key},
-        timeout=30,
-    )
-    r.raise_for_status()
-    recs = r.json().get("recordings", [])
-    if not recs:
-        raise RuntimeError("no recordings returned")
-    rec = recs[0]
-    audio = requests.get(rec["file"], params={"key": key}, timeout=90)
-    audio.raise_for_status()
-    tmp = "crane_source.mp3"
-    with open(tmp, "wb") as f:
-        f.write(audio.content)
-    y, _ = librosa.load(tmp, sr=SR, mono=True, duration=MAX_SECONDS)
-    print(f"xeno-canto XC{rec['id']} | recordist: {rec['rec']} | license: {rec['lic']}")
-    print("Audio remains under the recordist's Creative Commons license.")
-    return y, f"XC{rec['id']}"
+y = load(SPARSE)
+print(f"{len(y)/SR:.1f} s at {SR} Hz")""")
 
+md("""## 1. Look at it first
 
-def synth_fallback(dur=20.0):
-    """Crane-like test signal: repeated FM 'rattle' bursts with harmonics over noise."""
-    rng = np.random.default_rng(7)
-    n_total = int(SR * dur)
-    y = 0.004 * rng.standard_normal(n_total)
-    starts = np.cumsum(rng.uniform(1.0, 2.4, size=12))
-    for s in starts[starts < dur - 1.2]:
-        n = int(SR * rng.uniform(0.35, 0.75))
-        tt = np.arange(n) / SR
-        f0 = rng.uniform(550, 750)
-        sweep = f0 * (1 + 0.25 * np.sin(2 * np.pi * 22 * tt))
-        phase = 2 * np.pi * np.cumsum(sweep) / SR
-        burst = 0.6 * np.sin(phase) + 0.35 * np.sin(2 * phase) + 0.18 * np.sin(3 * phase)
-        i0 = int(s * SR)
-        y[i0:i0 + n] += burst * np.hanning(n) * rng.uniform(0.55, 0.9)
-    print("using synthesized crane-like test signal (no local file, no XC_API_KEY)")
-    return y.astype(np.float32), "SYNTH"
+Always. The single most common mistake in bioacoustics is running a detector before
+looking at the spectrogram, then trusting whatever comes out.""")
 
-
-y = source_id = None
-if AUDIO_PATH:
-    y, source_id = load_local(AUDIO_PATH)
-else:
-    try:
-        y, source_id = load_xeno_canto()
-    except Exception as e:
-        print(f"xeno-canto unavailable ({type(e).__name__}: {e}); falling back.")
-        y, source_id = synth_fallback()
-
-print(f"{len(y)/SR:.1f} s at {SR} Hz")'''))
-
-cells.append(nbf.v4.new_markdown_cell("## 2. Look at it: waveform and spectrogram"))
-
-cells.append(nbf.v4.new_code_cell("""HOP, NFFT = 256, 1024
-S = librosa.amplitude_to_db(np.abs(librosa.stft(y, n_fft=NFFT, hop_length=HOP)), ref=np.max)
-
-fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+code("""fig, axes = plt.subplots(2, 1, figsize=(13, 6), sharex=True)
 librosa.display.waveshow(y, sr=SR, ax=axes[0], color="#1F5C68")
-axes[0].set_title(f"Waveform ({source_id})")
-img = librosa.display.specshow(S, sr=SR, hop_length=HOP, x_axis="time",
+axes[0].set_title("Waveform: crane roost, dawn, sparse passage")
+img = librosa.display.specshow(spec(y), sr=SR, hop_length=HOP, x_axis="time",
                                y_axis="hz", ax=axes[1], cmap="magma")
 axes[1].set_ylim(0, 4000)
 axes[1].set_title("Spectrogram")
 fig.colorbar(img, ax=axes[1], format="%+2.0f dB")
-plt.tight_layout(); plt.savefig("fig_spectrogram.png", dpi=110); plt.show()"""))
+plt.tight_layout(); plt.savefig("fig_spectrogram.png", dpi=110); plt.show()""")
 
-cells.append(nbf.v4.new_markdown_cell("""## 3. Detect onsets, estimate offsets
+md("""Two things are already visible, and both matter more than any detector setting.
 
-Onsets come from `librosa.onset.onset_detect` with backtracking to the local
-energy minimum. Offsets use a simple, inspectable rule: within the window
-between this onset and the next one, find the energy peak, then walk forward
-along the RMS envelope until it decays below a fraction of that peak.
+Crane energy sits mostly between roughly 400 and 2500 Hz, with harmonic structure
+in the rattle. And there is **no silence**. The gaps between loud moments are not
+quiet, they are simply less loud. Whatever "noise floor" we compute is other cranes.
 
-Bounding each event by the **next onset** matters. Without it, a loud call
-arriving shortly after a quiet one captures the peak search and swallows both
-into a single oversized selection.
+That second point is the one that breaks naive detection.""")
 
-Simple and transparent is the point: this is an annotation *assist*, and every
-boundary should be easy to hand-correct in Raven afterwards."""))
+md("""## 2. Why the default settings do not work
 
-cells.append(nbf.v4.new_code_cell("""rms = librosa.feature.rms(y=y, frame_length=NFFT, hop_length=HOP)[0]
-times = librosa.frames_to_time(np.arange(len(rms)), sr=SR, hop_length=HOP)
-noise_floor = np.percentile(rms, 20)
+`librosa.onset.onset_detect` with stock parameters is tuned for music, where notes
+begin against a comparatively quiet background. Run it here as-is and see what
+happens.""")
 
-onsets = librosa.onset.onset_detect(y=y, sr=SR, hop_length=HOP,
-                                    backtrack=True, units="frames")
+code("""default_onsets = librosa.onset.onset_detect(y=y, sr=SR, hop_length=HOP,
+                                            backtrack=True, units="time")
+print(f"default settings: {len(default_onsets)} onsets in {len(y)/SR:.0f} s "
+      f"({len(default_onsets)/(len(y)/SR):.1f} per second)")""")
 
-MAX_EVENT_FRAMES = int(3.0 * SR / HOP)   # no single call runs longer than 3 s
-DECAY_FRAC       = 0.15                  # offset when envelope falls below 15% of peak
-MIN_SNR          = 3.0                   # peak must clear 3x the noise floor
+md("""Seven per second. Cranes do not call seven times a second; the detector is firing
+on amplitude ripple inside a continuous chorus.
 
-events = []
-for i, f in enumerate(onsets):
-    # Bound the search at the next onset so neighbouring calls stay separate.
-    nxt = onsets[i + 1] if i + 1 < len(onsets) else len(rms)
-    stop = min(f + MAX_EVENT_FRAMES, nxt, len(rms))
-    win = rms[f:stop]
-    if win.size == 0:
-        continue
+Two parameters fix this. `delta` sets how far the onset envelope must rise above its
+local average, and `wait` sets a minimum gap between detections. Rather than pick
+values by eye, sweep them.""")
 
-    peak = win.max()
-    if peak < MIN_SNR * noise_floor:
-        continue  # too weak to call an event
-
-    g = f + int(np.argmax(win))                       # frame of the peak
-    thresh = max(DECAY_FRAC * peak, 1.5 * noise_floor)
-    end = g
-    while end < stop - 1 and rms[end] > thresh:
-        end += 1
-
-    t0, t1 = float(times[f]), float(times[end])
-    if t1 - t0 >= 0.05:
-        events.append([t0, t1])
-
-# Merge anything that still overlaps after bounding.
-merged = []
-for t0, t1 in sorted(events):
-    if merged and t0 <= merged[-1][1] + 0.02:
-        merged[-1][1] = max(merged[-1][1], t1)
-    else:
-        merged.append([t0, t1])
-
-durs = [t1 - t0 for t0, t1 in merged]
-print(f"{len(merged)} events | duration min {min(durs):.2f}s "
-      f"median {np.median(durs):.2f}s max {max(durs):.2f}s")"""))
-
-cells.append(nbf.v4.new_markdown_cell("""## 4. Assign a frequency band per event
-
-For each event we take the band-limited spectrum and keep the range holding the
-central 90% of energy between 200 Hz and 4 kHz, a reasonable envelope for
-Sandhill Crane calls."""))
-
-cells.append(nbf.v4.new_code_cell("""Smag = np.abs(librosa.stft(y, n_fft=NFFT, hop_length=HOP))
-freqs = librosa.fft_frequencies(sr=SR, n_fft=NFFT)
-band = (freqs >= 200) & (freqs <= 4000)
-band_freqs = freqs[band]
-
+code("""env = librosa.onset.onset_strength(y=y, sr=SR, hop_length=HOP)
 rows = []
-for i, (t0, t1) in enumerate(merged, start=1):
-    f0, f1 = librosa.time_to_frames([t0, t1], sr=SR, hop_length=HOP)
-    spec = Smag[band, f0:max(f1, f0 + 1)].sum(axis=1)
-    if spec.sum() <= 0:
-        lo, hi = 200.0, 4000.0
-    else:
-        c = np.cumsum(spec) / spec.sum()
-        lo = float(band_freqs[np.searchsorted(c, 0.05)])
-        hi = float(band_freqs[min(np.searchsorted(c, 0.95), len(band_freqs) - 1)])
-    rows.append({"Selection": i, "View": "Spectrogram 1", "Channel": 1,
-                 "Begin Time (s)": round(t0, 4), "End Time (s)": round(t1, 4),
-                 "Low Freq (Hz)": round(lo, 1), "High Freq (Hz)": round(hi, 1)})
+for delta in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6):
+    for wait in (0, 10, 20, 40):
+        try:
+            on = librosa.onset.onset_detect(onset_envelope=env, sr=SR, hop_length=HOP,
+                                            backtrack=True, units="frames",
+                                            delta=delta, wait=wait)
+            n = len(on)
+        except Exception:
+            # librosa raises when the event list comes back empty; that is a
+            # legitimate outcome of an over-aggressive threshold, not an error.
+            n = 0
+        rows.append({"delta": delta, "wait": wait, "onsets": n,
+                     "per_sec": round(n / (len(y)/SR), 2)})
 
-sel = pd.DataFrame(rows)
-sel.head(10)"""))
+sweep = pd.DataFrame(rows).pivot(index="delta", columns="wait", values="onsets")
+print("onset count by (delta, wait)\\n")
+print(sweep)""")
 
-cells.append(nbf.v4.new_markdown_cell("""## 5. Export a Raven selection table
+md("""The count falls off a cliff between `delta=0.3` and `delta=0.6`. That cliff is the
+detector crossing from "tracking chorus ripple" to "finding nothing at all," and there
+is no wide plateau of stable behaviour in between. **That narrowness is itself the
+finding**: this material does not have a robust operating point, and any single
+parameter choice here is a judgement call rather than a discovered optimum.
 
-Raven and Raven Lite open tab-separated selection tables directly
-(`File > Open Selection Table` with the audio loaded). This is the handoff point
-between automated assistance and expert human review."""))
+We take `delta=0.3, wait=20` and are explicit that it was chosen, not derived.""")
 
-cells.append(nbf.v4.new_code_cell("""out = f"selections_{source_id}.txt"
-sel.to_csv(out, sep="\\t", index=False)
-print(f"wrote {out} with {len(sel)} selections")
-print(open(out).read()[:400])"""))
+code("""DELTA, WAIT = 0.3, 20
+MIN_SNR     = 2.5    # peak must clear this multiple of the background level
+DECAY_FRAC  = 0.35   # offset when the envelope falls to this fraction of the peak
+MAX_EVENT_S = 3.0
 
-cells.append(nbf.v4.new_code_cell("""fig, ax = plt.subplots(figsize=(12, 4.5))
-img = librosa.display.specshow(S, sr=SR, hop_length=HOP, x_axis="time",
+def detect(y):
+    \"\"\"Return merged (start, end) bouts of elevated calling.\"\"\"
+    rms   = librosa.feature.rms(y=y, frame_length=NFFT, hop_length=HOP)[0]
+    times = librosa.frames_to_time(np.arange(len(rms)), sr=SR, hop_length=HOP)
+    background = np.percentile(rms, 20)
+
+    try:
+        onsets = librosa.onset.onset_detect(y=y, sr=SR, hop_length=HOP, backtrack=True,
+                                            units="frames", delta=DELTA, wait=WAIT)
+    except Exception:
+        onsets = np.array([], dtype=int)
+    if len(onsets) == 0:
+        return [], rms, times, background
+
+    events = []
+    for i, f in enumerate(onsets):
+        nxt  = onsets[i + 1] if i + 1 < len(onsets) else len(rms)
+        stop = min(f + int(MAX_EVENT_S * SR / HOP), nxt, len(rms))
+        win  = rms[f:stop]
+        if win.size == 0:
+            continue
+        peak = win.max()
+        if peak < MIN_SNR * background:
+            continue
+        g   = f + int(np.argmax(win))
+        thr = max(DECAY_FRAC * peak, 1.2 * background)
+        e   = g
+        while e < stop - 1 and rms[e] > thr:
+            e += 1
+        if times[e] - times[f] >= 0.08:
+            events.append([float(times[f]), float(times[e])])
+
+    merged = []
+    for a, b in sorted(events):
+        if merged and a <= merged[-1][1] + 0.02:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return merged, rms, times, background
+
+bouts, rms, times, background = detect(y)
+durs = [b - a for a, b in bouts]
+print(f"{len(bouts)} bouts | duration min {min(durs):.2f}s "
+      f"median {np.median(durs):.2f}s max {max(durs):.2f}s")""")
+
+md("""## 3. What these actually are
+
+They are **not individual crane calls**, and calling them that would be the easiest
+lie in this notebook to tell.
+
+At a roost, hundreds of birds overlap. What survives thresholding is a period where
+several birds called at once loudly enough to lift the envelope above its neighbours.
+The honest label is a *calling bout*, and segmenting individual birds from this would
+need close-mic recordings, source separation, or a human with headphones and patience.
+
+Naming the unit correctly costs nothing and prevents every downstream number from
+meaning something other than what it claims.""")
+
+code("""fig, ax = plt.subplots(figsize=(14, 4.5))
+img = librosa.display.specshow(spec(y), sr=SR, hop_length=HOP, x_axis="time",
                                y_axis="hz", ax=ax, cmap="magma")
 ax.set_ylim(0, 4000)
-for _, r in sel.iterrows():
-    ax.add_patch(plt.Rectangle(
-        (r["Begin Time (s)"], r["Low Freq (Hz)"]),
-        r["End Time (s)"] - r["Begin Time (s)"],
-        r["High Freq (Hz)"] - r["Low Freq (Hz)"],
-        fill=False, edgecolor="#35E0D0", linewidth=1.4))
-ax.set_title(f"Detected events as Raven selections ({source_id})")
-plt.tight_layout(); plt.savefig("fig_selections.png", dpi=110); plt.show()"""))
+for a, b in bouts:
+    ax.add_patch(plt.Rectangle((a, 300), b - a, 2200, fill=False,
+                               edgecolor="#35E0D0", linewidth=1.5))
+ax.set_title(f"{len(bouts)} calling bouts (not individual calls)")
+plt.tight_layout(); plt.savefig("fig_selections.png", dpi=110); plt.show()""")
 
-cells.append(nbf.v4.new_markdown_cell("""## What this demo is not
+md("""## 4. A check that needs no ground truth
 
-This is deliberately the *simple* version: energy-based detection, transparent
-thresholds, no learned models, no call-type classification. Production
-annotation work (multi-observer protocols, call-type taxonomies, sequence
-analysis) lives in the private GRUS pipeline pending publication.
+There are no hand labels for this clip, so precision and recall are unavailable. That
+does not mean nothing can be measured.
 
-The demo's job is to show the shape of the workflow and produce artifacts a
-reviewer can open in Raven and check by ear."""))
+Run a **second, independent detector** and ask how much the two agree. Energy-based
+detection keys on loudness; spectral flux keys on how fast the spectrum is changing.
+They fail in different ways, so agreement between them is weak evidence that a
+detection reflects something real, and disagreement marks exactly where to look first.
+
+This is the same method-independence logic used elsewhere in my research work, applied
+here at demo scale.""")
+
+code("""def detect_flux(y):
+    \"\"\"Independent detector: spectral-flux peaks rather than RMS energy.\"\"\"
+    S    = np.abs(librosa.stft(y, n_fft=NFFT, hop_length=HOP))
+    flux = np.maximum(0, np.diff(S, axis=1)).sum(axis=0)
+    flux = flux / (flux.max() or 1)
+    t    = librosa.frames_to_time(np.arange(len(flux)), sr=SR, hop_length=HOP)
+    thr  = np.percentile(flux, 90)
+    peaks, i = [], 0
+    while i < len(flux):
+        if flux[i] > thr:
+            j = i
+            while j < len(flux) and flux[j] > thr * 0.5:
+                j += 1
+            peaks.append([float(t[i]), float(t[min(j, len(t) - 1)])])
+            i = j + WAIT
+        else:
+            i += 1
+    return peaks
+
+def overlaps(a, b):
+    return not (a[1] < b[0] or b[1] < a[0])
+
+flux_bouts = detect_flux(y)
+matched = sum(1 for e in bouts if any(overlaps(e, f) for f in flux_bouts))
+
+print(f"energy detector : {len(bouts)} bouts")
+print(f"flux detector   : {len(flux_bouts)} bouts")
+print(f"energy bouts corroborated by flux: {matched}/{len(bouts)} "
+      f"({100*matched/max(len(bouts),1):.0f}%)")""")
+
+md("""Every energy bout falls inside some flux bout. That is encouraging but should not be
+oversold: the flux detector fires far more often, so wide coverage alone produces high
+agreement. What the check genuinely rules out is an energy bout landing somewhere the
+spectrum is not changing at all, which would suggest a wind gust or a handling knock
+rather than a bird.
+
+Corroboration here is a filter against one specific failure, not a validation of
+correctness.""")
+
+md("""## 5. Export a Raven selection table
+
+Raven and Raven Lite open tab-separated selection tables directly
+(`File > Open Selection Table` with the audio loaded). This is the handoff from
+automated assistance to expert human review, which is where any of this becomes
+actual annotation.
+
+The `Corroborated` column is not part of the Raven spec; it is carried along so a
+reviewer knows which rows the second detector also found, and therefore which to
+check first.""")
+
+code("""S     = np.abs(librosa.stft(y, n_fft=NFFT, hop_length=HOP))
+freqs = librosa.fft_frequencies(sr=SR, n_fft=NFFT)
+band  = (freqs >= 200) & (freqs <= 4000)
+bf    = freqs[band]
+
+rows = []
+for i, (t0, t1) in enumerate(bouts, start=1):
+    f0, f1 = librosa.time_to_frames([t0, t1], sr=SR, hop_length=HOP)
+    sp = S[band, f0:max(f1, f0 + 1)].sum(axis=1)
+    if sp.sum() <= 0:
+        lo, hi = 200.0, 4000.0
+    else:
+        c  = np.cumsum(sp) / sp.sum()
+        lo = float(bf[np.searchsorted(c, 0.05)])
+        hi = float(bf[min(np.searchsorted(c, 0.95), len(bf) - 1)])
+    rows.append({"Selection": i, "View": "Spectrogram 1", "Channel": 1,
+                 "Begin Time (s)": round(t0, 4), "End Time (s)": round(t1, 4),
+                 "Low Freq (Hz)": round(lo, 1), "High Freq (Hz)": round(hi, 1),
+                 "Corroborated": any(overlaps([t0, t1], f) for f in flux_bouts)})
+
+sel = pd.DataFrame(rows)
+sel.to_csv("selections_roost_sparse.txt", sep="\\t", index=False)
+print(f"wrote selections_roost_sparse.txt with {len(sel)} rows")
+sel.head(10)""")
+
+md("""## 6. Where this stops working
+
+The clip above is the *easy* case. Nineteen minutes later the same roost sounds like
+this.""")
+
+code("""yc = load(CHORUS)
+
+def separability(y):
+    S = np.abs(librosa.stft(y, n_fft=NFFT, hop_length=HOP))
+    f = librosa.fft_frequencies(sr=SR, n_fft=NFFT)
+    e = S[(f >= 200) & (f <= 4000)].sum(axis=0)
+    return float(np.percentile(e, 95) / np.median(e))
+
+chorus_bouts, *_ = detect(yc)
+
+print(f"{'clip':<10}{'sep. ratio':>12}{'bouts':>8}{'per sec':>10}")
+for name, sig, bl in (("sparse", y, bouts), ("chorus", yc, chorus_bouts)):
+    print(f"{name:<10}{separability(sig):>12.2f}{len(bl):>8}"
+          f"{len(bl)/(len(sig)/SR):>10.2f}")""")
+
+code("""fig, axes = plt.subplots(2, 1, figsize=(13, 6))
+for ax, sig, title in ((axes[0], y,  "sparse passage: structure is visible"),
+                       (axes[1], yc, "chorus, ~19 min later: continuous")):
+    librosa.display.specshow(spec(sig), sr=SR, hop_length=HOP, x_axis="time",
+                             y_axis="hz", ax=ax, cmap="magma")
+    ax.set_ylim(0, 4000); ax.set_title(title)
+plt.tight_layout(); plt.savefig("fig_chorus_comparison.png", dpi=110); plt.show()""")
+
+md("""The separability ratio, peak band energy over median band energy, drops from about
+2.7 to about 1.3. A ratio near 1 means the loudest moment is barely louder than a
+typical one, and there is no threshold that separates signal from background because
+**the background is the signal**.
+
+On the chorus clip the detector returns **zero** bouts. Not a handful of bad ones: none.
+Nothing clears 2.5x the background, because the background is now as loud as the peaks.
+
+Read that result carefully, because its shape is deceptive. Passed downstream, zero
+detections reports as *no calling activity* at the exact moment thousands of birds are
+calling at once. The failure is not noisy, it is silent and inverted, and no exception
+is raised anywhere. A pipeline that logged "0 events, OK" here would be lying with a
+straight face.
+
+If you take one thing from this notebook, take this: compute a separability statistic
+and report it alongside the detections, so an empty result can be told apart from an
+uninformative one.
+
+## What this is and is not
+
+Textbook methods on real audio: energy thresholds, transparent parameters, no learned
+models, no call-type classification, no individual identification. The parameters were
+chosen and are documented as chosen.
+
+Production annotation work, meaning multi-observer protocols, call-type taxonomies, and
+sequence analysis, lives in the private GRUS pipeline pending publication.
+
+**Audio** recorded by the author, central Platte River, Nebraska, March 2026. Released
+with this repository under CC BY 4.0. **Code** MIT.""")
 
 nb["cells"] = cells
 nb["metadata"]["kernelspec"] = {"display_name": "Python 3", "language": "python", "name": "python3"}
